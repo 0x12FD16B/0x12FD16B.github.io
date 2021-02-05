@@ -1,0 +1,78 @@
+<!DOCTYPE html><html lang="zh-Hans"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"><meta name="description" content="JDK 1.8 中 HashMap 的 hash 算法和寻址算法"><meta name="keywords" content=""><meta name="author" content="David Liu"><meta name="copyright" content="David Liu"><title>JDK 1.8 中 HashMap 的 hash 算法和寻址算法 | David Liu's Blog</title><link rel="shortcut icon" href="/multiple_devices.ico"><link rel="stylesheet" href="/css/index.css?version=1.9.0"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome@latest/css/font-awesome.min.css?version=1.9.0"><meta name="format-detection" content="telephone=no"><meta http-equiv="x-dns-prefetch-control" content="on"><link rel="dns-prefetch" href="https://cdn.jsdelivr.net"><link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/instantsearch.js@2.1.1/dist/instantsearch.min.css"><script src="https://cdn.jsdelivr.net/npm/instantsearch.js@2.1.1/dist/instantsearch.min.js" defer></script><meta http-equiv="Cache-Control" content="no-transform"><meta http-equiv="Cache-Control" content="no-siteapp"><script>var GLOBAL_CONFIG = { 
+  root: '/',
+  algolia: {"appId":"7FHY4NYQX5","apiKey":"a36b12831f2af13826a5f6439414dcb2","indexName":"0x12FD16B.github.io","hits":{"per_page":10},"languages":{"input_placeholder":"搜索文章","hits_empty":"找不到您查询的内容:${query}","hits_stats":"找到 ${hits} 条结果，用时 ${time} 毫秒"}},
+  localSearch: undefined,
+  copy: {
+    success: '复制成功',
+    error: '复制错误',
+    noSupport: '浏览器不支持'
+  },
+  hexoVersion: '5.3.0'
+} </script><meta name="generator" content="Hexo 5.3.0"></head><body><i class="fa fa-arrow-right" id="toggle-sidebar" aria-hidden="true"></i><div id="sidebar" data-display="true"><div class="toggle-sidebar-info text-center"><span data-toggle="切换文章详情">切换站点概览</span><hr></div><div class="sidebar-toc"><div class="sidebar-toc__title">目录</div><div class="sidebar-toc__progress"><span class="progress-notice">你已经读了</span><span class="progress-num">0</span><span class="progress-percentage">%</span><div class="sidebar-toc__progress-bar"></div></div><div class="sidebar-toc__content"><ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E6%BA%90%E4%BB%A3%E7%A0%81"><span class="toc-number">1.</span> <span class="toc-text">源代码</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E4%B8%8D%E7%9B%B4%E6%8E%A5%E7%94%A8-hashCode-length"><span class="toc-number">2.</span> <span class="toc-text">为什么不直接用 hashCode() % length ?</span></a></li></ol></div></div><div class="author-info hide"><div class="author-info__avatar text-center"><img src="https://hexo-images-1256356315.cos.ap-chengdu.myqcloud.com/avatar.jpg"></div><div class="author-info__name text-center">David Liu</div><div class="author-info__description text-center"></div><div class="follow-button"><a target="_blank" rel="noopener" href="https://github.com/0x12FD16B">Follow Me</a></div><hr><div class="author-info-articles"><a class="author-info-articles__archives article-meta" href="/archives"><span class="pull-left">文章</span><span class="pull-right">22</span></a><a class="author-info-articles__tags article-meta" href="/tags"><span class="pull-left">标签</span><span class="pull-right">3</span></a></div><hr><div class="author-info-links"><div class="author-info-links__title text-center">友情链接</div><a class="author-info-links__name text-center" target="_blank" rel="noopener" href="https://www.jianshu.com/u/645a7ba1b5c2">nuopromise 的简书</a><a class="author-info-links__name text-center" target="_blank" rel="noopener" href="https://www.jianshu.com/u/ce8f1a28ade1">风洛洛的简书</a></div></div></div><div id="content-outer"><div class="plain" id="top-container"><div id="page-header"><span class="pull-left"> <a id="site-name" href="/">David Liu's Blog</a></span><i class="fa fa-bars toggle-menu pull-right" aria-hidden="true"></i><span class="pull-right menus">   <a class="site-page" href="/">首页</a><a class="site-page" href="/archives">归档</a><a class="site-page" href="/tags">标签</a><a class="site-page" href="/categories">分类</a></span><span class="pull-right"><a class="site-page social-icon search"><i class="fa fa-search"></i><span> 搜索</span></a></span></div></div><div class="layout" id="content-inner"><article id="post"><div class="plain" id="post-title">JDK 1.8 中 HashMap 的 hash 算法和寻址算法</div><div id="post-meta"><time class="post-meta__date"><i class="fa fa-calendar" aria-hidden="true"></i> 2020-10-24</time><span class="post-meta__separator">|</span><span class="post-meta-wordcount"><span>字数总计: </span><span class="word-count">581</span><span class="post-meta__separator">|</span><span>阅读时长: 2 分钟</span></span></div><div class="article-container" id="post-content"><h2 id="源代码"><a href="#源代码" class="headerlink" title="源代码"></a>源代码</h2><p><strong>hash() 方法</strong></p>
+<figure class="highlight java"><table><tr><td class="code"><pre><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">final</span> <span class="keyword">int</span> <span class="title">hash</span><span class="params">(Object key)</span> </span>&#123;</span><br><span class="line">	<span class="keyword">int</span> h;</span><br><span class="line">	<span class="keyword">return</span> (key == <span class="keyword">null</span>) ? <span class="number">0</span> : (h = key.hashCode()) ^ (h &gt;&gt;&gt; <span class="number">16</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p><code>h = key.hashCode()</code> 表示 <code>h</code> 是 <code>key</code> 对象的 <code>hashCode</code> 返回值；</p>
+<p><code>h &gt;&gt;&gt; 16</code> 是 <code>h</code> 右移 <code>16</code> 位，因为 <code>int</code> 是 <code>4</code> 字节，<code>32</code> 位，所以右移 <code>16</code> 位后变成: 左边 <code>16</code> 个 <code>0</code> + 右边原 <code>h</code> 的高 <code>16</code> 位；</p>
+<p>最后把这两个进行异或返回。</p>
+<blockquote>
+<p>异或：二进制位运算。如果一样返回 0，不一样则返回 1。<br>例：两个二进制 110 和 100 进行异或</p>
+</blockquote>
+<p>  110<br>^ 100<br>结果 = 010</p>
+<p><strong>putVal() 中寻址部分</strong></p>
+<p><code>tab[i = (n - 1) &amp; hash]</code><br><code>tab</code> 就是 <code>HashMap</code> 里的 <code>table</code> 数组 <code>Node&lt;K,V&gt;[] table;</code><br><code>n</code> 是这个数组的长度 <code>length</code>;<br><code>hash</code> 就是上面 <code>hash()</code> 方法返回的值;</p>
+<h2 id="为什么不直接用-hashCode-length"><a href="#为什么不直接用-hashCode-length" class="headerlink" title="为什么不直接用 hashCode() % length ?"></a>为什么不直接用 hashCode() % length ?</h2><p>看完源码会有疑问，为什么不直接用 key 对象的 hashCode 对哈希表长度取模 ?</p>
+<blockquote>
+<p>寻址为什么不用取模 ?</p>
+</blockquote>
+<p>对于上面寻址算法, 由于计算机对比取模, 与运算会更快。所以为了效率, <code>HashMap</code> 中规定了哈希表长度为 <code>2</code> 的 <code>k</code> 次方，而 <code>2^k-1</code> 转为二进制就是 <code>k</code> 个连续的 <code>1</code>，那么 <code>hash &amp; (k 个连续的 1)</code> 返回的就是 <code>hash</code> 的低 <code>k</code> 个位，该计算结果范围刚好就是 <code>0</code> 到 <code>2^k-1</code>，即 <code>0</code> 到 <code>length - 1</code>，跟取模结果一样。</p>
+<p>也就是说，哈希表长度 <code>length</code> 为 <code>2</code> 的整次幂时，<code>hash &amp; (length - 1)</code> 的计算结果跟 <code>hash % length</code> 一样，而且效率还更好。</p>
+<blockquote>
+<p>为什么不直接用 <code>hashCode()</code> 而是用它的高 <code>16</code> 位进行异或计算新 <code>hash</code> 值 ?</p>
+</blockquote>
+<p><code>int</code> 类型占 <code>32</code> 位，可以表示 <code>2^32</code> 种数（范围：<code>-2^31</code> 到 <code>2^31-1</code>），而哈希表长度一般不大，在 <code>HashMap</code> 中哈希表的初始化长度是 <code>16</code>（<code>HashMap</code> 中的 <code>DEFAULTINITIALCAPACITY</code>），如果直接用 <code>hashCode</code> 来寻址，那么相当于只有低 <code>4</code> 位有效，其他高位不会有影响。这样假如几个 <code>hashCode</code> 分别是 <code>2^10</code>、<code>2^20</code>、<code>2^30</code>，那么寻址结果 <code>index</code> 就会一样而发生冲突，所以哈希表就不均匀分布了。<br>为了减少这种冲突，<code>HashMap</code> 中让 <code>hashCode</code> 的高位也参与了寻址计算（进行扰动），即把 <code>hashCode</code> 高 <code>16</code> 位与 <code>hashCode</code> 进行异或算出 <code>hash</code>，然后根据 <code>hash</code>  来做寻址。</p>
+</div></article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta">文章作者: </span><span class="post-copyright-info"><a href="mailto:undefined">David Liu</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta">文章链接: </span><span class="post-copyright-info"><a href="https://davidliu.now.sh/2020/10/24/jdk1-8-hash-map-hash/">https://davidliu.now.sh/2020/10/24/jdk1-8-hash-map-hash/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta">版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来自 <a href="https://davidliu.now.sh">David Liu's Blog</a>！</span></div></div><div class="post-meta__tag-list"></div><div class="addthis_inline_share_toolbox pull-right"></div><script src="//s7.addthis.com/js/300/addthis_widget.js#pubid=ra-601018c104d1e2b6" async></script><nav id="pagination"><div class="prev-post pull-left"><a href="/2021/01/01/running-summary-2020/"><i class="fa fa-chevron-left">  </i><span>一名入门严肃跑者 2020 跑步总结</span></a></div><div class="next-post pull-right"><a href="/2020/10/23/replace_mac_home_brew_source/"><span>替换 Mac HomeBrew 安装源</span><i class="fa fa-chevron-right"></i></a></div></nav><div id="vcomment"></div><script src="https://cdn1.lncld.net/static/js/3.0.4/av-min.js"></script><script src="https://cdn.jsdelivr.net/npm/valine/dist/Valine.min.js"></script><script>var notify = 'true' == 'true';
+var verify = 'false' == 'true';
+var record_ip = 'false' == 'true';
+var GUEST_INFO = ['nick','mail','link'];
+var guest_info = 'nick,mail'.split(',').filter(function(item){
+  return GUEST_INFO.indexOf(item) > -1
+});
+guest_info = guest_info.length == 0 ? GUEST_INFO :guest_info;
+window.valine = new Valine({
+  el:'#vcomment',
+  notify:notify,
+  verify:verify,
+  recordIP:record_ip,
+  appId:'BOsCEC5I1p9lJiARGqcwCcA5-gzGzoHsz',
+  appKey:'91gkx1rxDiQczTiPWFJ59xLK',
+  placeholder:'欢迎留言~',
+  avatar:'mm',
+  guest_info:guest_info,
+  pageSize:'10',
+  lang: 'zh-cn'
+})</script></div></div><footer><div class="layout" id="footer"><div class="copyright">&copy;2020 - 2021 By David Liu</div><div class="framework-info"><span>驱动 - </span><a target="_blank" rel="noopener" href="http://hexo.io"><span>Hexo</span></a><span class="footer-separator">|</span><span>主题 - </span><a target="_blank" rel="noopener" href="https://github.com/Molunerfinn/hexo-theme-melody"><span>Melody</span></a></div><div class="footer_custom_text">日拱一卒，功不唐捐</div><div class="busuanzi"><script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script><span id="busuanzi_container_page_pv"><i class="fa fa-eye"></i><span id="busuanzi_value_page_pv"></span><span></span></span></div></div></footer><i class="fa fa-arrow-up" id="go-up" aria-hidden="true"></i><script src="https://cdn.jsdelivr.net/npm/animejs@latest/anime.min.js"></script><script src="https://cdn.jsdelivr.net/npm/jquery@latest/dist/jquery.min.js"></script><script src="https://cdn.jsdelivr.net/npm/@fancyapps/fancybox@latest/dist/jquery.fancybox.min.js"></script><script src="https://cdn.jsdelivr.net/npm/velocity-animate@latest/velocity.min.js"></script><script src="https://cdn.jsdelivr.net/npm/velocity-ui-pack@latest/velocity.ui.min.js"></script><script src="/js/utils.js?version=1.9.0"></script><script src="/js/fancybox.js?version=1.9.0"></script><script src="/js/sidebar.js?version=1.9.0"></script><script src="/js/copy.js?version=1.9.0"></script><script src="/js/fireworks.js?version=1.9.0"></script><script src="/js/transition.js?version=1.9.0"></script><script src="/js/scroll.js?version=1.9.0"></script><script src="/js/head.js?version=1.9.0"></script><script src="/js/search/algolia.js"></script><script type="text/x-mathjax-config">MathJax.Hub.Config({
+  tex2jax: {
+    inlineMath: [ ['$','$'], ["\\(","\\)"]  ],
+    processEscapes: true,
+    skipTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+  },
+  CommonHTML: {
+    linebreaks: { automatic: true, width: "90% container" }
+  },
+  "HTML-CSS": { 
+    linebreaks: { automatic: true, width: "90% container" }
+  },
+  "SVG": { 
+    linebreaks: { automatic: true, width: "90% container" }
+  }
+});
+</script><script type="text/x-mathjax-config">MathJax.Hub.Queue(function() {
+  var all = MathJax.Hub.getAllJax(), i;
+  for (i=0; i < all.length; i += 1) {
+    all[i].SourceElement().parentNode.className += ' has-jax';
+  }
+});
+</script><script src="https://cdn.jsdelivr.net/npm/mathjax/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script><script>if(/Android|webOS|iPhone|iPod|iPad|BlackBerry/i.test(navigator.userAgent)) {
+  $('#nav').addClass('is-mobile')
+  $('footer').addClass('is-mobile')
+  $('#top-container').addClass('is-mobile')
+}</script><div class="search-dialog" id="algolia-search"><div class="search-dialog__title" id="algolia-search-title">Algolia</div><div id="algolia-input-panel"><div id="algolia-search-input"></div></div><hr><div id="algolia-search-results"><div id="algolia-hits"></div><div id="algolia-pagination"></div><div id="algolia-stats"></div></div><span class="search-close-button"><i class="fa fa-times"></i></span></div><div class="search-mask"></div></body></html>
